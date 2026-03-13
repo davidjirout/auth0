@@ -43,7 +43,24 @@ auth0_ui <- function(ui, info) {
       if (!verify) {
         if (grepl("error=unauthorized", req$QUERY_STRING)) {
           redirect <- sprintf("location.replace(\"%s\");", logout_url())
-          shiny::tags$script(shiny::HTML(redirect))
+          # Return httpResponse with Cache-Control to prevent browser caching
+          # redirect pages. Cached redirects cause auth0 state mismatch loops
+          # on deployment because the old state doesn't match the new instance.
+          redirect_html <- paste0(
+            "<!DOCTYPE html><html><head>",
+            "<meta charset=\"utf-8\">",
+            "</head><body><script>", redirect, "</script></body></html>"
+          )
+          shiny::httpResponse(
+            status = 200L,
+            content_type = "text/html; charset=UTF-8",
+            content = redirect_html,
+            headers = list(
+              "Cache-Control" = "no-store, no-cache, must-revalidate",
+              "Pragma" = "no-cache",
+              "Expires" = "0"
+            )
+          )
         } else {
           params <- shiny::parseQueryString(req$QUERY_STRING)
           params$code <- NULL
@@ -85,7 +102,24 @@ auth0_ui <- function(ui, info) {
             query_extra = query_extra
           )
           redirect <- sprintf("location.replace(\"%s\");", url)
-          shiny::tags$script(shiny::HTML(redirect))
+          # Return httpResponse with Cache-Control to prevent browser caching
+          # redirect pages. Cached redirects cause auth0 state mismatch loops
+          # on deployment because the old state doesn't match the new instance.
+          redirect_html <- paste0(
+            "<!DOCTYPE html><html><head>",
+            "<meta charset=\"utf-8\">",
+            "</head><body><script>", redirect, "</script></body></html>"
+          )
+          shiny::httpResponse(
+            status = 200L,
+            content_type = "text/html; charset=UTF-8",
+            content = redirect_html,
+            headers = list(
+              "Cache-Control" = "no-store, no-cache, must-revalidate",
+              "Pragma" = "no-cache",
+              "Expires" = "0"
+            )
+          )
         }
       } else {
         if (is.function(ui)) {
