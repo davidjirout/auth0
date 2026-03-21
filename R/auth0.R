@@ -45,7 +45,23 @@ auth0_server_verify <- function(session, app, api, state) {
 }
 
 auth0_state <- function(server) {
-  paste(sample(c(letters, LETTERS, 0:9), 10, replace = TRUE), collapse = "")
+  # On multi-instance deployments (Cloud Run concurrency=1), each instance
+  # generates its own random state. Auth0 callbacks can be routed to a
+  # different instance whose state won't match -> redirect loop.
+  # Fix: derive a deterministic state from the shared AUTH0_SECRET so all
+  # instances produce the same value. Rotates monthly to limit replay window.
+  secret <- Sys.getenv("AUTH0_SECRET", "")
+  if (nzchar(secret)) {
+    substr(
+      digest::digest(
+        paste0(secret, format(Sys.Date(), "%Y-%m")),
+        algo = "sha256", serialize = FALSE
+      ),
+      1, 32
+    )
+  } else {
+    paste(sample(c(letters, LETTERS, 0:9), 10, replace = TRUE), collapse = "")
+  }
 }
 
 #' Information used to connect to Auth0.

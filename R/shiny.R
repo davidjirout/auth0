@@ -36,16 +36,15 @@ auth0_ui <- function(ui, info) {
   } else {
     if (missing(info)) info <- auth0_info()
     function(req) {
-      verify <- has_auth_code(
-        shiny::parseQueryString(req$QUERY_STRING),
-        info$state
-      )
+      params <- shiny::parseQueryString(req$QUERY_STRING)
+      verify <- has_auth_code(params, info$state)
       if (!verify) {
-        if (grepl("error=unauthorized", req$QUERY_STRING)) {
+        # Handle ALL Auth0 errors — not just "unauthorized".
+        # Previously only "error=unauthorized" was caught; other errors
+        # (e.g. "access_denied" from redirect_uri mismatch) fell through
+        # to the redirect-to-Auth0 branch, causing an infinite loop.
+        if (!is.null(params$error)) {
           redirect <- sprintf("location.replace(\"%s\");", logout_url())
-          # Return httpResponse with Cache-Control to prevent browser caching
-          # redirect pages. Cached redirects cause auth0 state mismatch loops
-          # on deployment because the old state doesn't match the new instance.
           redirect_html <- paste0(
             "<!DOCTYPE html><html><head>",
             "<meta charset=\"utf-8\">",
@@ -62,9 +61,10 @@ auth0_ui <- function(ui, info) {
             )
           )
         } else {
-          params <- shiny::parseQueryString(req$QUERY_STRING)
           params$code <- NULL
           params$state <- NULL
+          params$error <- NULL
+          params$error_description <- NULL
 
           # Reconstruct the query string
           query <- paste(
@@ -73,8 +73,13 @@ auth0_ui <- function(ui, info) {
           )
           query <- if (query != "") paste0("?", query) else ""
 
-          # Preserve the original path (req$PATH_INFO) in the redirect URI
-          if (grepl("127.0.0.1", req$HTTP_HOST)) {
+          # Use configured remote_url for production (correct protocol),
+          # fall back to request-based construction for local development.
+          # Cloud Run terminates TLS at the load balancer, so req sees
+          # http:// even though the external URL is https://.
+          if (!is.null(info$remote_url) && nzchar(info$remote_url)) {
+            redirect_uri <- paste0(info$remote_url, query)
+          } else if (grepl("127.0.0.1", req$HTTP_HOST)) {
             redirect_uri <- paste0(
               "http://",
               gsub("127.0.0.1", "localhost", req$HTTP_HOST),
@@ -82,8 +87,11 @@ auth0_ui <- function(ui, info) {
               query
             )
           } else {
+            # Respect X-Forwarded-Proto from reverse proxies
+            proto <- req$HTTP_X_FORWARDED_PROTO
+            if (is.null(proto) || !nzchar(proto)) proto <- "http"
             redirect_uri <- paste0(
-              "http://",
+              proto, "://",
               req$HTTP_HOST,
               req$PATH_INFO,
               query
