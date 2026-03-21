@@ -19,21 +19,27 @@ auth0_server_verify <- function(session, app, api, state) {
   params <- shiny::parseQueryString(u_search)
 
   if (has_auth_code(params, state)) {
-    cred <- httr::oauth2.0_access_token(api, app(redirect_uri), params$code)
-    token <- httr::oauth2.0_token(
-      app = app(redirect_uri), endpoint = api, cache = FALSE, credentials = cred,
-      user_params = list(grant_type = "authorization_code"))
+    tryCatch({
+      cred <- httr::oauth2.0_access_token(api, app(redirect_uri), params$code)
+      token <- httr::oauth2.0_token(
+        app = app(redirect_uri), endpoint = api, cache = FALSE, credentials = cred,
+        user_params = list(grant_type = "authorization_code"))
 
-    userinfo_url <- sub("authorize", "userinfo", api$authorize)
-    resp <- httr::RETRY(
-      verb = "GET"
-      , url = userinfo_url
-      , httr::config(token = token)
-      , times = 5
-    )
+      userinfo_url <- sub("authorize", "userinfo", api$authorize)
+      resp <- httr::RETRY(
+        verb = "GET"
+        , url = userinfo_url
+        , httr::config(token = token)
+        , times = 5
+      )
 
-    assign("auth0_credentials", token$credentials, envir = session$userData)
-    assign("auth0_info", httr::content(resp, "parsed"), envir = session$userData)
+      assign("auth0_credentials", token$credentials, envir = session$userData)
+      assign("auth0_info", httr::content(resp, "parsed"), envir = session$userData)
+    }, error = function(e) {
+      message("⚠️ auth0_server_verify failed: ", e$message)
+      message("⚠️ redirect_uri was: ", redirect_uri)
+      message("⚠️ App will continue without auth0 credentials in session$userData")
+    })
   }
 
 }
